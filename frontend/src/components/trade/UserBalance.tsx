@@ -28,16 +28,23 @@ function UserBalance() {
     [userAddress]
   );
 
+  // Add console logs for debugging
+  useEffect(() => {
+    console.log("Chain ID:", activeChain.chainId);
+    console.log("USD Token Address:", USD_TOKEN_ADDRESS);
+    console.log("Contract:", contract);
+  }, [activeChain.chainId, USD_TOKEN_ADDRESS, contract]);
+
   // Add polling with useEffect
   useEffect(() => {
-    if (userAddress) {
+    if (userAddress && contract) {
       const interval = setInterval(() => {
         refetchBalance();
       }, 1000);
 
       return () => clearInterval(interval);
     }
-  }, [refetchBalance, userAddress]);
+  }, [refetchBalance, userAddress, contract]);
 
   const { mutateAsync: getFaucetFunds, isLoading: isFaucetLoading } = useContractWrite(
     contract,
@@ -72,6 +79,28 @@ function UserBalance() {
         </Typography>
         <Typography sx={{ mt: 1, color: 'error.main' }}>
           Connect wallet: <Box component="span" fontWeight="bold">{activeChain.name}</Box>.
+        </Typography>
+      </Paper>
+    );
+  }
+
+  // Add check for contract availability
+  if (!contract) {
+    return (
+      <Paper 
+        sx={{ 
+          bgcolor: '#1a1b1e',
+          p: 2,
+          width: '100%',
+          display: 'flex',
+          flexDirection: 'column'
+        }}
+      >
+        <Typography variant="h6" sx={{ color: 'text.secondary' }}>
+          Balance
+        </Typography>
+        <Typography sx={{ mt: 1, color: 'error.main' }}>
+          Contract not available on {activeChain.name}. Please check your configuration.
         </Typography>
       </Paper>
     );
