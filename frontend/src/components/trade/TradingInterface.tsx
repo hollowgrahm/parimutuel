@@ -104,9 +104,10 @@ export default function TradingInterface() {
                   lineHeight: 1.5
                 }}>
                   Due to $MON gas availability limitations the liquidation and funding engines might be lagging at times on the Monad Testnet. 
-                  If you would like to support the project you can do so by donating $MON to 0x9b7e5d40fCb79bbF4171521F5a8e2e15808f82D7 so we can improve performance. 
-                  Please be aware the testnet RPC endpoint might be getting rate limited due to high traffic as well, we are actively working on setting up an enterprise alternative. 
+                  If you would like to support the project you can do so by donating $MON to 0x9b7e5d40fCb79bbF4171521F5a8e2e15808f82D7 so we can improve performance.
                   Thank you for understanding and enjoy the Monad Testnet!
+                  <br />
+                  - Engine is currently out of gas, please use the Base Sepolia Testnet for now.
                 </Typography>
               </Alert>
             </Grid>

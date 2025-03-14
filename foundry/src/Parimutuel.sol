@@ -48,8 +48,8 @@ contract Parimutuel {
     uint256 private constant FUNDING_INTERVAL = 900; // 60
     uint256 private constant FUNDING_PERIODS = 96; // 1
     uint256 private constant FAUCET_AMOUNT = 10_000 * PRECISION;
-    uint256 private constant BPS = 10000;
-    uint256 private constant FEE = 200;
+    //uint256 private constant BPS = 10000;
+    //uint256 private constant FEE = 200;
 
     struct Position {
         address owner;
@@ -135,7 +135,7 @@ contract Parimutuel {
     function shortRemoveLiquidity(address user) external {
         Liquidity storage liquidity = shortLPs[user];
         uint256 profit = (liquidity.shares * shortProfits) / shortShares;
-        uint256 netProfit = (profit * (BPS - FEE)) / BPS;
+        uint256 netProfit = (profit * (10000 - 200)) / 10000;
         uint256 fee = profit - netProfit;
 
         shortProfits -= profit;
@@ -232,7 +232,7 @@ contract Parimutuel {
             uint256 totalTokens = shortTokens + longTokens;
             uint256 difference = shortTokens - longTokens;
             uint256 funding = totalTokens / difference;
-            uint256 margin = pos.tokens / pos.leverage;
+            uint256 margin = (pos.tokens * PRECISION) / pos.leverage;
             uint256 dailyRate = margin / funding;
             fundingFee = dailyRate / FUNDING_PERIODS;
         }
@@ -313,8 +313,8 @@ contract Parimutuel {
 
         uint256 shareProfits = shortShareValue(user);
         uint256 fundProfits = shortFundValue(user);
-        uint256 netShareProfit = (shareProfits * (BPS - FEE)) / BPS;
-        uint256 netFundProfit = (fundProfits * (BPS - FEE)) / BPS;
+        uint256 netShareProfit = (shareProfits * (10000 - 200)) / 10000;
+        uint256 netFundProfit = (fundProfits * (10000 - 200)) / 10000;
         uint256 shareFee = shareProfits - netShareProfit;
         uint256 fundFee = fundProfits - netFundProfit;
 
@@ -436,7 +436,7 @@ contract Parimutuel {
     function longRemoveLiquidity(address user) external {
         Liquidity storage liquidity = longLPs[user];
         uint256 profit = (liquidity.shares * longProfits) / longShares;
-        uint256 netProfit = (profit * (BPS - FEE)) / BPS;
+        uint256 netProfit = (profit * (10000 - 200)) / 10000;
         uint256 fee = profit - netProfit;
 
         longProfits -= profit;
@@ -529,7 +529,7 @@ contract Parimutuel {
             uint256 totalTokens = longTokens + shortTokens;
             uint256 difference = longTokens - shortTokens;
             uint256 funding = totalTokens / difference;
-            uint256 margin = pos.tokens / pos.leverage;
+            uint256 margin = (pos.tokens * PRECISION) / pos.leverage;
             uint256 dailyRate = margin / funding;
             fundingFee = dailyRate / FUNDING_PERIODS;
         }
@@ -612,8 +612,8 @@ contract Parimutuel {
 
         uint256 shareProfits = longShareValue(user);
         uint256 fundProfits = longFundValue(user);
-        uint256 netShareProfit = (shareProfits * (BPS - FEE)) / BPS;
-        uint256 netFundProfit = (fundProfits * (BPS - FEE)) / BPS;
+        uint256 netShareProfit = (shareProfits * (10000 - 200)) / 10000;
+        uint256 netFundProfit = (fundProfits * (10000 - 200)) / 10000;
         uint256 shareFee = shareProfits - netShareProfit;
         uint256 fundFee = fundProfits - netFundProfit;
 
