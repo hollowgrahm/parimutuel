@@ -17,7 +17,6 @@ import {IERC20} from "./interfaces/IERC20.sol";
 contract Parimutuel {
     using Array for address[];
 
-    // mapping(address => bool) private admins;
     address private admin;
     address private feeCollector;
     PriceFeed private oracle;
@@ -48,8 +47,6 @@ contract Parimutuel {
     uint256 private constant FUNDING_INTERVAL = 900; // 60
     uint256 private constant FUNDING_PERIODS = 96; // 1
     uint256 private constant FAUCET_AMOUNT = 10_000 * PRECISION;
-    //uint256 private constant BPS = 10000;
-    //uint256 private constant FEE = 200;
 
     struct Position {
         address owner;
