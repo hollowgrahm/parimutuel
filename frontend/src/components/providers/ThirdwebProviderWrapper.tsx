@@ -30,7 +30,7 @@ const baseSepolia: Chain = {
   slug: "base-sepolia",
   testnet: true,
   chain: "Base Sepolia",
-  name: "Base Sepolia",
+  name: "Base Sepolia Testnet",
 };
 
 const monadTestnet: Chain = {

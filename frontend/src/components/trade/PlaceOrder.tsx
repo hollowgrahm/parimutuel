@@ -12,12 +12,18 @@ import {
   Box,
   CircularProgress,
   Stack,
+  Alert,
 } from "@mui/material";
 import { useContract, useContractRead, useContractWrite, useAddress } from "@thirdweb-dev/react";
 import { PARIMUTUEL_ABI, USD_ABI } from "../../config/contracts";
 import { ContractInterface } from "ethers";
 import { useContractAddresses } from "../../hooks/useContractAddresses";
 import { useChainContext } from "../providers/ThirdwebProviderWrapper";
+
+// Constants for Base Sepolia
+const BASE_SEPOLIA_CHAIN_ID = 84532;
+const MAX_RETRIES = 3;
+const INITIAL_BACKOFF_MS = 1000;
 
 interface Position {
   owner: string;
@@ -45,10 +51,22 @@ const PlaceOrder = () => {
   const [isCalculatingFees, setIsCalculatingFees] = useState(false);
   const [effectiveLeverageLong, setEffectiveLeverageLong] = useState<number | null>(null);
   const [effectiveLeverageShort, setEffectiveLeverageShort] = useState<number | null>(null);
+  const [networkWarning, setNetworkWarning] = useState<string | null>(null);
 
   const address = useAddress();
   const { contract } = useContract(PARIMUTUEL_ADDRESS, PARIMUTUEL_ABI as ContractInterface);
   const { contract: usdContract } = useContract(USD_TOKEN_ADDRESS, USD_ABI as ContractInterface);
+
+  const isBaseSepolia = activeChain?.chainId === BASE_SEPOLIA_CHAIN_ID;
+
+  // Check if we're on Base Sepolia and show a warning
+  useEffect(() => {
+    if (isBaseSepolia) {
+      setNetworkWarning("You're on Base Sepolia which may experience RPC issues. If transactions fail, please try again or switch to another network.");
+    } else {
+      setNetworkWarning(null);
+    }
+  }, [isBaseSepolia]);
 
   const { data: longPositionsData } = useContractRead(
     contract,
@@ -329,6 +347,40 @@ const PlaceOrder = () => {
     calculateLeverageFees();
   }, [contract, margin, leverage, globalStats, activeChain]);
 
+  // Retry function with exponential backoff for Base Sepolia
+  const executeWithRetry = async (
+    operation: () => Promise<any>,
+    retryCount = 0
+  ): Promise<any> => {
+    try {
+      return await operation();
+    } catch (error: any) {
+      // Only retry for Base Sepolia and specific RPC errors
+      if (
+        isBaseSepolia && 
+        retryCount < MAX_RETRIES && 
+        (error?.message?.includes("Internal JSON-RPC error") || 
+         error?.message?.includes("execution reverted") ||
+         error?.message?.includes("transaction underpriced"))
+      ) {
+        const backoffTime = INITIAL_BACKOFF_MS * Math.pow(2, retryCount);
+        console.log(`Retrying operation in ${backoffTime}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+        
+        // Show toast for retry
+        toast.info(`Transaction failed. Retrying in ${backoffTime/1000} seconds...`);
+        
+        // Wait for backoff period
+        await new Promise(resolve => setTimeout(resolve, backoffTime));
+        
+        // Retry with incremented counter
+        return executeWithRetry(operation, retryCount + 1);
+      }
+      
+      // If we've exhausted retries or it's not a retryable error, rethrow
+      throw error;
+    }
+  };
+
   const handleOrder = async (type: 'long' | 'short') => {
     if (!margin || isNaN(Number(margin)) || Number(margin) <= 0) {
       toast.error("Please enter a valid margin amount.");
@@ -351,27 +403,42 @@ const PlaceOrder = () => {
         margin: marginInWei,
         leverage: leverageInWei,
         marginOriginal: margin,
-        leverageOriginal: leverage
+        leverageOriginal: leverage,
+        network: activeChain?.name,
+        chainId: activeChain?.chainId
       });
 
+      // Use the retry mechanism for Base Sepolia
       if (type === 'long') {
-        const tx = await longOpen({ 
-          args: [
-            address,  // Add user address as first parameter
-            marginInWei,
-            leverageInWei
-          ] 
-        });
+        const tx = await executeWithRetry(() => 
+          longOpen({ 
+            args: [
+              address,
+              marginInWei,
+              leverageInWei
+            ],
+            // For Base Sepolia, we'll increase gas limit and price slightly
+            overrides: isBaseSepolia ? {
+              gasLimit: 3000000, // Increase gas limit
+            } : undefined
+          })
+        );
         await tx.receipt;
         toast.success("Long position opened successfully!");
       } else {
-        const tx = await shortOpen({ 
-          args: [
-            address,  // Add user address as first parameter
-            marginInWei,
-            leverageInWei
-          ] 
-        });
+        const tx = await executeWithRetry(() => 
+          shortOpen({ 
+            args: [
+              address,
+              marginInWei,
+              leverageInWei
+            ],
+            // For Base Sepolia, we'll increase gas limit and price slightly
+            overrides: isBaseSepolia ? {
+              gasLimit: 3000000, // Increase gas limit
+            } : undefined
+          })
+        );
         await tx.receipt;
         toast.success("Short position opened successfully!");
       }
@@ -386,6 +453,11 @@ const PlaceOrder = () => {
         
         if (message.includes("execution reverted:")) {
           errorMessage = message.split("execution reverted:")[1].trim();
+        } else if (message.includes("Internal JSON-RPC error")) {
+          errorMessage = "Network connection issue. Please try again later.";
+          if (isBaseSepolia) {
+            errorMessage += " Base Sepolia may be experiencing RPC issues.";
+          }
         } else {
           errorMessage = message;
         }
@@ -409,14 +481,32 @@ const PlaceOrder = () => {
 
     setIsProcessing(true);
     try {
-      const tx = await approve({ 
-        args: [PARIMUTUEL_ADDRESS, maxUint256] 
-      });
+      // Use the retry mechanism for Base Sepolia
+      const tx = await executeWithRetry(() => 
+        approve({ 
+          args: [PARIMUTUEL_ADDRESS, maxUint256],
+          // For Base Sepolia, we'll increase gas limit slightly
+          overrides: isBaseSepolia ? {
+            gasLimit: 100000, // Increase gas limit for approvals
+          } : undefined
+        })
+      );
       await tx.receipt;
       await refetchAllowance();
       toast.success("Token approval successful!");
     } catch (error: any) {
-      toast.error("Failed to approve token spending.");
+      let errorMessage = "Failed to approve token spending.";
+      
+      if (error?.message) {
+        if (error.message.includes("Internal JSON-RPC error")) {
+          errorMessage = "Network connection issue. Please try again later.";
+          if (isBaseSepolia) {
+            errorMessage += " Base Sepolia may be experiencing RPC issues.";
+          }
+        }
+      }
+      
+      toast.error(errorMessage);
       console.error(error);
     } finally {
       setIsProcessing(false);
@@ -425,7 +515,16 @@ const PlaceOrder = () => {
 
   const handleGetFunds = async () => {
     try {
-      const tx = await getFaucetFunds({ args: [] });
+      // Use the retry mechanism for Base Sepolia
+      const tx = await executeWithRetry(() => 
+        getFaucetFunds({ 
+          args: [],
+          // For Base Sepolia, we'll increase gas limit slightly
+          overrides: isBaseSepolia ? {
+            gasLimit: 100000, // Increase gas limit for faucet
+          } : undefined
+        })
+      );
       await tx.receipt;
       toast.success("Successfully received funds from faucet!");
     } catch (error) {
@@ -479,6 +578,7 @@ const PlaceOrder = () => {
         height: '100%',
         margin: 0,
         padding: 3,
+        position: 'relative',
       }}
     >
       {/* Loading overlay */}
@@ -502,6 +602,13 @@ const PlaceOrder = () => {
       <Typography variant="h6" color="text.primary" sx={{ mb: 2 }}>
         Place Order
       </Typography>
+
+      {/* Network warning for Base Sepolia */}
+      {networkWarning && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          {networkWarning}
+        </Alert>
+      )}
 
       {/* Add balance check */}
       {!isBalanceLoading && balance && parseFloat(formatUnits(balance, 8)) < 1000 ? (

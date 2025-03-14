@@ -1,6 +1,6 @@
 "use client";
 
-import { useAddress, useContract, useContractRead, useContractWrite } from "@thirdweb-dev/react";
+import { useAddress, useContract, useContractRead, useContractWrite, useSDK } from "@thirdweb-dev/react";
 import { formatUnits } from "viem";
 import { Paper, Typography, Box, CircularProgress, Button } from "@mui/material";
 import { USD_ABI } from "../../config/contracts";
@@ -14,8 +14,51 @@ function UserBalance() {
   const userAddress = useAddress();
   const { activeChain } = useChainContext();
   const { usdToken: USD_TOKEN_ADDRESS } = useContractAddresses();
+  const sdk = useSDK();
   
-  const { contract } = useContract(USD_TOKEN_ADDRESS, USD_ABI as ContractInterface);
+  // Use the hardcoded address directly from the .env file
+  // This is a temporary fix to bypass the hook
+  const hardcodedAddress = "0x1d347B071E7A8DF2E5AeefcAE5ce02Ef356F28c9"; // Base Sepolia USD address
+  
+  // Log the addresses for debugging
+  console.log("Chain ID:", activeChain.chainId);
+  console.log("USD Token Address from hook:", USD_TOKEN_ADDRESS);
+  console.log("Hardcoded Address:", hardcodedAddress);
+  console.log("SDK initialized:", !!sdk);
+  
+  // Try the hardcoded address as a last resort
+  const addressToUse = USD_TOKEN_ADDRESS || hardcodedAddress;
+  
+  const { contract } = useContract(addressToUse, USD_ABI as ContractInterface);
+  
+  console.log("Contract initialized with address:", addressToUse);
+  console.log("Contract object:", contract);
+
+  // Try to initialize the contract directly with the SDK as an alternative approach
+  useEffect(() => {
+    const initContract = async () => {
+      if (sdk && addressToUse) {
+        try {
+          const contract = await sdk.getContract(addressToUse, USD_ABI as ContractInterface);
+          console.log("Contract initialized with SDK:", contract);
+          
+          // Try to read the balance directly
+          if (userAddress) {
+            try {
+              const balance = await contract.call("balanceOf", [userAddress]);
+              console.log("Balance from direct call:", balance);
+            } catch (error) {
+              console.error("Error reading balance directly:", error);
+            }
+          }
+        } catch (error) {
+          console.error("Error initializing contract with SDK:", error);
+        }
+      }
+    };
+    
+    initContract();
+  }, [sdk, addressToUse, userAddress]);
 
   const {
     data: balance,
@@ -28,12 +71,12 @@ function UserBalance() {
     [userAddress]
   );
 
-  // Add console logs for debugging
+  // Log any errors from the contract read
   useEffect(() => {
-    console.log("Chain ID:", activeChain.chainId);
-    console.log("USD Token Address:", USD_TOKEN_ADDRESS);
-    console.log("Contract:", contract);
-  }, [activeChain.chainId, USD_TOKEN_ADDRESS, contract]);
+    if (balanceError) {
+      console.error("Balance error details:", balanceError);
+    }
+  }, [balanceError]);
 
   // Add polling with useEffect
   useEffect(() => {
