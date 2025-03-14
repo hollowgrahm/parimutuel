@@ -1,4 +1,4 @@
-# Parimutuel Betting Platform
+# Parimutuel Protocol
 
 A decentralized parimutuel perpetual futures platform built with Next.js, Tailwind CSS, and Foundry for smart contracts. The platform supports multiple blockchain networks including Base Sepolia and Monad Testnet.
 
