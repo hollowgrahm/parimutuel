@@ -79,7 +79,7 @@ export default function TradingInterface() {
           }}
         >
           {/* Monad Chain Banner */}
-          {isMonadChain && (
+          {/* {isMonadChain && (
             <Grid item xs={12} sx={{ px: '0 !important', mx: '0 !important' }}>
               <Alert 
                 severity="info" 
@@ -116,7 +116,7 @@ export default function TradingInterface() {
                 </Typography>
               </Alert>
             </Grid>
-          )}
+          )} */}
 
           {/* Row 1 - PriceFeeds */}
           <Grid item xs={12} sx={{
