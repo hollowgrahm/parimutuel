@@ -103,11 +103,16 @@ export default function TradingInterface() {
                   fontSize: '0.95rem',
                   lineHeight: 1.5
                 }}>
-                  Due to $MON gas availability limitations the liquidation and funding engines might be lagging at times on the Monad Testnet. 
+                  Due to $MON gas availability limitations:
+                  <br />
+                  - Liquidation and funding engines might be lagging at times on the Monad Testnet.
+                  <br />
+                  - Funding engine functions every six hours instead of the fifteen minutes default on other deployments.
+                  <br />
+                  - We are not able to simulate as many positions as we would like. Since leverage becomes cheaper as liquidity grows, leverage fees will be more expensive than in other networks.
+                  <br />
                   If you would like to support the project you can do so by donating $MON to 0x9b7e5d40fCb79bbF4171521F5a8e2e15808f82D7 so we can improve performance.
                   Thank you for understanding and enjoy the Monad Testnet!
-                  <br />
-                  - Engine is currently out of gas, please use the Base Sepolia Testnet for now.
                 </Typography>
               </Alert>
             </Grid>

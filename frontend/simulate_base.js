@@ -445,7 +445,7 @@ async function runSimulationCycle() {
     const { shortPercentage, longPercentage } = await getMarketDistribution();
     console.log(`${colors.cyan}Current market distribution: ${shortPercentage}% shorts, ${longPercentage}% longs${colors.reset}`);
 
-    const basePositions = 10; // Base number of positions
+    const basePositions = 1; // Base number of positions
     let numShortPositions = basePositions;
     let numLongPositions = basePositions;
 
@@ -514,8 +514,8 @@ async function main() {
           } catch (error) {
             console.error(`${colors.red}Error in main loop:${colors.reset}`, error.message);
           }
-          console.log(`\n${colors.purple}Waiting 5 seconds before next cycle...${colors.reset}`);
-          await new Promise(resolve => setTimeout(resolve, 5000));
+          console.log(`\n${colors.purple}Waiting 30 seconds before next cycle...${colors.reset}`);
+          await new Promise(resolve => setTimeout(resolve, 30000));
         }
         break;
         
@@ -542,8 +542,8 @@ async function main() {
           } catch (error) {
             console.error(`${colors.red}Error in market checks loop:${colors.reset}`, error.message);
           }
-          console.log(`\n${colors.purple}Waiting 5 seconds before next market check...${colors.reset}`);
-          await new Promise(resolve => setTimeout(resolve, 5000));
+          console.log(`\n${colors.purple}Waiting 30 seconds before next market check...${colors.reset}`);
+          await new Promise(resolve => setTimeout(resolve, 30000));
         }
         break;
         

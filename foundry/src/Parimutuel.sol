@@ -44,8 +44,8 @@ contract Parimutuel {
     uint256 private constant PRECISION = 10 ** 8;
     uint256 private constant MIN_LEVERAGE = 2 * PRECISION;
     uint256 private constant MAX_LEVERAGE = 100 * PRECISION;
-    uint256 private constant FUNDING_INTERVAL = 900;
-    uint256 private constant FUNDING_PERIODS = 96;
+    uint256 private constant FUNDING_INTERVAL = 21600;
+    uint256 private constant FUNDING_PERIODS = 4;
     uint256 private constant FAUCET_AMOUNT = 10_000 * PRECISION;
 
     struct Position {

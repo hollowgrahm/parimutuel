@@ -40,13 +40,62 @@ const monadTestnetChain = {
   },
   rpcUrls: {
     default: {
-      http: ['https://testnet-rpc.monad.xyz'],
+      http: [
+        'https://testnet-rpc.monad.xyz',
+        'https://monad-testnet.g.alchemy.com/v2/iYrVMBRKUTH4Ia5nvnrmFNSYHeDA70Zf'
+      ],
     },
     public: {
-      http: ['https://testnet-rpc.monad.xyz'],
+      http: [
+        'https://testnet-rpc.monad.xyz',
+        'https://monad-testnet.g.alchemy.com/v2/iYrVMBRKUTH4Ia5nvnrmFNSYHeDA70Zf'
+      ],
     },
   },
 };
+
+// Track which RPC endpoint we're currently using
+let currentRpcIndex = 0;
+const rpcEndpoints = [
+  'https://testnet-rpc.monad.xyz',
+  'https://monad-testnet.g.alchemy.com/v2/iYrVMBRKUTH4Ia5nvnrmFNSYHeDA70Zf'
+];
+
+// Function to create a transport with the current RPC endpoint
+function createCurrentTransport() {
+  return http(rpcEndpoints[currentRpcIndex]);
+}
+
+// Function to switch to the next RPC endpoint
+function switchRpcEndpoint() {
+  currentRpcIndex = (currentRpcIndex + 1) % rpcEndpoints.length;
+  console.log(`${colors.yellow}Switching to RPC endpoint: ${rpcEndpoints[currentRpcIndex]}${colors.reset}`);
+  
+  // Recreate clients with the new RPC endpoint
+  recreateClients();
+  
+  return rpcEndpoints[currentRpcIndex];
+}
+
+// Function to recreate clients with the current RPC endpoint
+function recreateClients() {
+  const transport = createCurrentTransport();
+  
+  // Recreate wallet client
+  walletClient = createWalletClient({
+    account,
+    chain: monadTestnetChain,
+    transport: transport,
+  });
+  
+  // Recreate public client
+  publicClient = createPublicClient({
+    chain: monadTestnetChain,
+    transport: transport,
+  });
+  
+  console.log(`${colors.green}Clients recreated with RPC endpoint: ${rpcEndpoints[currentRpcIndex]}${colors.reset}`);
+}
 
 // Contract address from environment variables
 const parimutuelAddress = process.env.NEXT_PUBLIC_MONAD_TESTNET_PARIMUTUEL_ADDRESS;
@@ -63,17 +112,44 @@ if (!privateKey) {
 } 
 
 const account = privateKeyToAccount(privateKey);
-const walletClient = createWalletClient({
+let walletClient = createWalletClient({
   account,
   chain: monadTestnetChain,
-  transport: http(),
+  transport: createCurrentTransport(),
 });
 
 // Create public client for reading contract state
-const publicClient = createPublicClient({
+let publicClient = createPublicClient({
   chain: monadTestnetChain,
-  transport: http(),
+  transport: createCurrentTransport(),
 });
+
+// Add a nonce tracker
+let currentNonce = null;
+
+// Helper function to get the latest nonce
+async function getLatestNonce() {
+  try {
+    // Get the current nonce from the blockchain
+    const onchainNonce = await publicClient.getTransactionCount({
+      address: account.address,
+    });
+    
+    // If we have a tracked nonce, use the higher of the two
+    if (currentNonce !== null) {
+      return currentNonce > onchainNonce ? currentNonce : onchainNonce;
+    }
+    
+    return onchainNonce;
+  } catch (error) {
+    console.error(`${colors.red}Error getting nonce:${colors.reset}`, error);
+    // If we can't get the nonce, but have a tracked one, use that
+    if (currentNonce !== null) {
+      return currentNonce;
+    }
+    throw error;
+  }
+}
 
 // Get USD token address from environment variables
 const usdAddress = process.env.NEXT_PUBLIC_MONAD_TESTNET_USD_ADDRESS;
@@ -84,7 +160,7 @@ if (!usdAddress) {
 
 // Define standard delays
 const TRANSACTION_DELAY = 1000;  // 1 second between transactions
-const CYCLE_DELAY = 5000;        // 5 seconds between cycles
+const CYCLE_DELAY = 30000;        // 30 seconds between cycles
 const ERROR_DELAY = 10000;       // 10 seconds after errors
 
 // Base gas price for Monad
@@ -111,27 +187,53 @@ function generateRandomLeverages(count) {
   return leverages;
 }
 
-// Add helper function to estimate gas using eth_estimateGas RPC method
+// Update the helper function to estimate gas with RPC fallback
 async function estimateGas(txParams) {
-  try {
-    const gasEstimate = await publicClient.transport.request({
-      method: "eth_estimateGas",
-      params: [{
-        from: txParams.account,
-        to: txParams.to,
-        data: txParams.data,
-        value: "0x0"
-      }]
-    });
-    
-    // Convert hex string to BigInt and add 10% buffer
-    const estimate = BigInt(gasEstimate);
-    return (estimate * 110n) / 100n;
-  } catch (error) {
-    console.error(`${colors.red}Error estimating gas:${colors.reset}`, error);
-    // Return a default high gas limit if estimation fails
-    return 30000000n;
+  let attempts = 0;
+  const maxAttempts = rpcEndpoints.length * 2; // Try each endpoint twice
+  
+  while (attempts < maxAttempts) {
+    try {
+      const gasEstimate = await publicClient.transport.request({
+        method: "eth_estimateGas",
+        params: [{
+          from: txParams.account,
+          to: txParams.to,
+          data: txParams.data,
+          value: "0x0"
+        }]
+      });
+      
+      // Convert hex string to BigInt and add 10% buffer
+      const estimate = BigInt(gasEstimate);
+      return (estimate * 110n) / 100n;
+    } catch (error) {
+      attempts++;
+      
+      // Check if it's a rate limit error
+      if (error.status === 429 || 
+          error.message?.includes('request limit reached') || 
+          error.details?.includes('request limit reached')) {
+        console.error(`${colors.red}Rate limit reached on RPC endpoint. Switching...${colors.reset}`);
+        switchRpcEndpoint();
+        
+        // Wait a bit before retrying
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } else if (attempts >= maxAttempts) {
+        console.error(`${colors.red}Error estimating gas after ${attempts} attempts:${colors.reset}`, error);
+        // Return a default high gas limit if estimation fails
+        return 30000000n;
+      } else {
+        console.error(`${colors.red}Error estimating gas (attempt ${attempts}/${maxAttempts}):${colors.reset}`, error);
+        // Wait a bit before retrying
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
   }
+  
+  // If we've exhausted all attempts, return a default high gas limit
+  console.error(`${colors.red}Failed to estimate gas after ${attempts} attempts. Using default.${colors.reset}`);
+  return 30000000n;
 }
 
 // Add helper function to process funding in batches
@@ -151,17 +253,35 @@ async function processFundingInBatches(isShort = true) {
 
     console.log(`${colors.cyan}Found ${positions.length} ${isShort ? 'short' : 'long'} positions needing funding${colors.reset}`);
 
+    // Get the current nonce from the blockchain
+    let currentNonce;
+    try {
+      currentNonce = await publicClient.getTransactionCount({
+        address: account.address,
+      });
+      console.log(`${colors.cyan}Current nonce for funding: ${currentNonce}${colors.reset}`);
+    } catch (error) {
+      console.error(`${colors.red}Error getting nonce:${colors.reset}`, error);
+      throw error;
+    }
+
     // Process in batches of 400 for funding
     const batchSize = 400;
     for (let i = 0; i < positions.length; i += batchSize) {
       const batch = positions.slice(i, i + batchSize);
       console.log(`${colors.purple}Processing funding batch ${Math.floor(i/batchSize) + 1} with ${batch.length} positions${colors.reset}`);
       
+      await retryWithBackoff(async (nonceOffset) => {
+        // Get the nonce for this transaction
+        const nonce = currentNonce + nonceOffset;
+        console.log(`${colors.cyan}Using nonce ${nonce} for funding transaction${colors.reset}`);
+      
       const hash = await walletClient.writeContract({
         address: parimutuelAddress,
         abi: ParimutuelABI,
         functionName: isShort ? 'fundingShortList' : 'fundingLongList',
         args: [batch],
+          nonce: nonce,
         gas: await estimateGas({
           account: account.address,
           to: parimutuelAddress,
@@ -171,10 +291,17 @@ async function processFundingInBatches(isShort = true) {
             args: [batch]
           })
         }),
+          maxFeePerGas: baseGasPrice * 2n,
       });
       
       console.log(`${colors.magenta}[${new Date().toISOString()}] ${isShort ? 'short' : 'long'} funding batch ${Math.floor(i/batchSize) + 1} transaction hash: ${hash}${colors.reset}`);
       await new Promise(resolve => setTimeout(resolve, TRANSACTION_DELAY));
+        
+        // Increment the nonce for the next transaction
+        currentNonce++;
+        
+        return hash;
+      });
     }
   } catch (error) {
     console.error(`${colors.red}Error in batch funding for ${isShort ? 'shorts' : 'longs'}:${colors.reset}`, error);
@@ -198,17 +325,35 @@ async function liquidateInBatches(isShort = true) {
 
     console.log(`${colors.cyan}Found ${positions.length} ${isShort ? 'short' : 'long'} positions to liquidate${colors.reset}`);
 
+    // Get the current nonce from the blockchain
+    let currentNonce;
+    try {
+      currentNonce = await publicClient.getTransactionCount({
+        address: account.address,
+      });
+      console.log(`${colors.cyan}Current nonce for liquidation: ${currentNonce}${colors.reset}`);
+    } catch (error) {
+      console.error(`${colors.red}Error getting nonce:${colors.reset}`, error);
+      throw error;
+    }
+
     // Process liquidations in batches of 5
     const batchSize = 5;
     for (let i = 0; i < positions.length; i += batchSize) {
       const batch = positions.slice(i, i + batchSize);
       console.log(`${colors.purple}Processing batch ${Math.floor(i/batchSize) + 1} with ${batch.length} positions${colors.reset}`);
       
+      await retryWithBackoff(async (nonceOffset) => {
+        // Get the nonce for this transaction
+        const nonce = currentNonce + nonceOffset;
+        console.log(`${colors.cyan}Using nonce ${nonce} for liquidation transaction${colors.reset}`);
+      
       const hash = await walletClient.writeContract({
         address: parimutuelAddress,
         abi: ParimutuelABI,
         functionName: isShort ? 'closeShortList' : 'closeLongList',
         args: [batch],
+          nonce: nonce,
         gas: await estimateGas({
           account: account.address,
           to: parimutuelAddress,
@@ -218,10 +363,17 @@ async function liquidateInBatches(isShort = true) {
             args: [batch]
           })
         }),
+          maxFeePerGas: baseGasPrice * 2n,
       });
       
       console.log(`${colors.magenta}[${new Date().toISOString()}] ${isShort ? 'short' : 'long'} liquidation batch ${Math.floor(i/batchSize) + 1} transaction hash: ${hash}${colors.reset}`);
       await new Promise(resolve => setTimeout(resolve, TRANSACTION_DELAY));
+        
+        // Increment the nonce for the next transaction
+        currentNonce++;
+        
+        return hash;
+      });
     }
   } catch (error) {
     console.error(`${colors.red}Error in batch liquidation for ${isShort ? 'shorts' : 'longs'}:${colors.reset}`, error);
@@ -334,6 +486,76 @@ async function getMarketDistribution() {
   }
 }
 
+// Update the isRpcError function to include rate limit errors
+function isRpcError(error) {
+  return error.message?.includes('Unexpected end of JSON input') || 
+         error.message?.includes('HTTP request failed') ||
+         error.message?.includes('Another transaction has higher priority') ||
+         error.details?.includes('Another transaction has higher priority') ||
+         error.shortMessage?.includes('Another transaction has higher priority') ||
+         error.cause?.shortMessage?.includes('Another transaction has higher priority') ||
+         error.message?.includes('nonce too low') ||
+         error.message?.includes('Transaction nonce too low') ||
+         error.shortMessage?.includes('nonce too low') ||
+         error.cause?.shortMessage?.includes('nonce too low') ||
+         error.status === 429 ||
+         error.message?.includes('request limit reached') ||
+         error.details?.includes('request limit reached');
+}
+
+// Update the retryWithBackoff function to handle RPC rate limit errors
+async function retryWithBackoff(fn, maxRetries = 5, initialDelay = 2000) {
+  let retries = 0;
+  let delay = initialDelay;
+  let nonceOffset = 0;
+  
+  while (retries < maxRetries) {
+    try {
+      // If we've had nonce issues, try with an incremented nonce
+      if (nonceOffset > 0) {
+        console.log(`${colors.cyan}Trying with nonce offset: +${nonceOffset}${colors.reset}`);
+      }
+      
+      return await fn(nonceOffset);
+    } catch (error) {
+      if (isRpcError(error)) {
+        retries++;
+        
+        // Check if it's a rate limit error
+        if (error.status === 429 || 
+            error.message?.includes('request limit reached') || 
+            error.details?.includes('request limit reached')) {
+          console.log(`${colors.yellow}Rate limit error detected. Switching RPC endpoint...${colors.reset}`);
+          switchRpcEndpoint();
+        }
+        
+        // For nonce errors, increment the nonce offset
+        if (error.message?.includes('nonce too low') || 
+            error.shortMessage?.includes('nonce too low') ||
+            error.cause?.shortMessage?.includes('nonce too low')) {
+          console.log(`${colors.yellow}Nonce error detected. Incrementing nonce offset...${colors.reset}`);
+          nonceOffset++;
+          console.log(`${colors.cyan}New nonce offset: +${nonceOffset}${colors.reset}`);
+        }
+        
+        if (retries >= maxRetries) {
+          console.error(`${colors.red}Maximum retries (${maxRetries}) reached. Giving up.${colors.reset}`);
+          throw error;
+        }
+        
+        console.log(`${colors.yellow}RPC error detected. Retrying in ${delay/1000} seconds (attempt ${retries}/${maxRetries})...${colors.reset}`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        
+        // Increase gas price for next attempt and implement exponential backoff
+        delay *= 2;
+      } else {
+        // Not an RPC error, rethrow
+        throw error;
+      }
+    }
+  }
+}
+
 // Function to simulate shorts
 async function simulateShorts(positions, leverages) {
   try {
@@ -347,13 +569,31 @@ async function simulateShorts(positions, leverages) {
     console.log(`${colors.purple}Debug - First position leverage:${colors.reset}`, leverages[0]);
     console.log(`${colors.purple}Debug - FAUCET_AMOUNT:${colors.reset}`, FAUCET_AMOUNT.toString());
     
-    // First mint enough USD tokens for all positions
+    // Get the current nonce from the blockchain
+    let currentNonce;
+    try {
+      currentNonce = await publicClient.getTransactionCount({
+        address: account.address,
+      });
+      console.log(`${colors.cyan}Current nonce for shorts: ${currentNonce}${colors.reset}`);
+    } catch (error) {
+      console.error(`${colors.red}Error getting nonce:${colors.reset}`, error);
+      throw error;
+    }
+    
+    // First mint enough USD tokens for all positions with retry logic
+    await retryWithBackoff(async (nonceOffset) => {
+      // Get the latest nonce for this transaction
+      const nonce = currentNonce + nonceOffset;
+      console.log(`${colors.cyan}Using nonce ${nonce} for mint transaction${colors.reset}`);
+      
     const mintHash = await walletClient.writeContract({
       address: usdAddress,
       abi: USDABI,
       functionName: 'mint',
       args: [account.address, FAUCET_AMOUNT * BigInt(positions.length)],
-      maxFeePerGas: baseGasPrice,
+        maxFeePerGas: baseGasPrice * 2n, // Increase base gas price
+        nonce: nonce, // Explicitly set the nonce
       gas: await estimateGas({
         account: account.address,
         to: usdAddress,
@@ -366,16 +606,28 @@ async function simulateShorts(positions, leverages) {
     });
     console.log(`${colors.magenta}[${new Date().toISOString()}] mint() transaction hash:${colors.reset} ${mintHash}`);
     await new Promise(resolve => setTimeout(resolve, TRANSACTION_DELAY));
+      
+      // Increment the current nonce for the next transaction
+      currentNonce++;
+      
+      return mintHash;
+    });
 
     // Create margins array filled with FAUCET_AMOUNT
     const margins = Array(positions.length).fill(FAUCET_AMOUNT);
 
-    // Open all short positions in one transaction
+    // Open all short positions in one transaction with retry logic
+    await retryWithBackoff(async (nonceOffset) => {
+      // Get the latest nonce for this transaction
+      const nonce = currentNonce + nonceOffset;
+      console.log(`${colors.cyan}Using nonce ${nonce} for simulateShorts transaction${colors.reset}`);
+      
     const hash = await walletClient.writeContract({
       address: parimutuelAddress,
       abi: ParimutuelABI,
       functionName: 'simulateShorts',
       args: [positions, margins, leverages],
+        nonce: nonce, // Explicitly set the nonce
       gas: await estimateGas({
         account: account.address,
         to: parimutuelAddress,
@@ -385,10 +637,12 @@ async function simulateShorts(positions, leverages) {
           args: [positions, margins, leverages]
         })
       }),
-      maxFeePerGas: baseGasPrice * 3n,
+        maxFeePerGas: baseGasPrice * 4n, // Increase gas price for this transaction
     });
     console.log(`${colors.magenta}[${new Date().toISOString()}] simulateShorts() transaction hash:${colors.reset} ${hash}`);
     await new Promise(resolve => setTimeout(resolve, TRANSACTION_DELAY));
+      return hash;
+    });
 
   } catch (error) {
     console.error(`${colors.red}[${new Date().toISOString()}] Error in simulateShorts():${colors.reset}`, error);
@@ -407,13 +661,31 @@ async function simulateLongs(positions, leverages) {
     console.log(`${colors.bright}Number of positions:${colors.reset}`, positions.length);
     console.log(`${colors.bright}Contract address:${colors.reset}`, parimutuelAddress);
     
-    // First mint enough USD tokens for all positions
+    // Get the current nonce from the blockchain
+    let currentNonce;
+    try {
+      currentNonce = await publicClient.getTransactionCount({
+        address: account.address,
+      });
+      console.log(`${colors.cyan}Current nonce for longs: ${currentNonce}${colors.reset}`);
+    } catch (error) {
+      console.error(`${colors.red}Error getting nonce:${colors.reset}`, error);
+      throw error;
+    }
+    
+    // First mint enough USD tokens for all positions with retry logic
+    await retryWithBackoff(async (nonceOffset) => {
+      // Get the latest nonce for this transaction
+      const nonce = currentNonce + nonceOffset;
+      console.log(`${colors.cyan}Using nonce ${nonce} for mint transaction${colors.reset}`);
+      
     const mintHash = await walletClient.writeContract({
       address: usdAddress,
       abi: USDABI,
       functionName: 'mint',
       args: [account.address, FAUCET_AMOUNT * BigInt(positions.length)],
-      maxFeePerGas: baseGasPrice,
+        maxFeePerGas: baseGasPrice * 2n, // Increase base gas price
+        nonce: nonce, // Explicitly set the nonce
       gas: await estimateGas({
         account: account.address,
         to: usdAddress,
@@ -426,16 +698,28 @@ async function simulateLongs(positions, leverages) {
     });
     console.log(`${colors.magenta}[${new Date().toISOString()}] mint() transaction hash:${colors.reset} ${mintHash}`);
     await new Promise(resolve => setTimeout(resolve, TRANSACTION_DELAY));
+      
+      // Increment the current nonce for the next transaction
+      currentNonce++;
+      
+      return mintHash;
+    });
 
     // Create margins array filled with FAUCET_AMOUNT
     const margins = Array(positions.length).fill(FAUCET_AMOUNT);
 
-    // Open all long positions in one transaction
+    // Open all long positions in one transaction with retry logic
+    await retryWithBackoff(async (nonceOffset) => {
+      // Get the latest nonce for this transaction
+      const nonce = currentNonce + nonceOffset;
+      console.log(`${colors.cyan}Using nonce ${nonce} for simulateLongs transaction${colors.reset}`);
+      
     const hash = await walletClient.writeContract({
       address: parimutuelAddress,
       abi: ParimutuelABI,
       functionName: 'simulateLongs',
       args: [positions, margins, leverages],
+        nonce: nonce, // Explicitly set the nonce
       gas: await estimateGas({
         account: account.address,
         to: parimutuelAddress,
@@ -445,10 +729,12 @@ async function simulateLongs(positions, leverages) {
           args: [positions, margins, leverages]
         })
       }),
-      maxFeePerGas: baseGasPrice * 3n,
+        maxFeePerGas: baseGasPrice * 4n, // Increase gas price even more for this transaction
     });
     console.log(`${colors.magenta}[${new Date().toISOString()}] simulateLongs() transaction hash:${colors.reset} ${hash}`);
     await new Promise(resolve => setTimeout(resolve, TRANSACTION_DELAY));
+      return hash;
+    });
 
   } catch (error) {
     console.error(`${colors.red}[${new Date().toISOString()}] Error in simulateLongs():${colors.reset}`, error);
@@ -470,7 +756,7 @@ async function runSimulationCycle() {
     const { shortPercentage, longPercentage } = await getMarketDistribution();
     console.log(`${colors.cyan}Current market distribution: ${shortPercentage}% shorts, ${longPercentage}% longs${colors.reset}`);
 
-    const basePositions = 10; // Base number of positions
+    const basePositions = 1; // Base number of positions
     let numShortPositions = basePositions;
     let numLongPositions = basePositions;
 
@@ -555,7 +841,7 @@ async function main() {
           } catch (error) {
             console.error(`${colors.red}Error in main loop:${colors.reset}`, error.message);
           }
-          console.log(`\n${colors.purple}Waiting 5 seconds before next cycle...${colors.reset}`);
+          console.log(`\n${colors.purple}Waiting 30 seconds before next cycle...${colors.reset}`);
           await new Promise(resolve => setTimeout(resolve, CYCLE_DELAY));
         }
         break;
@@ -583,7 +869,7 @@ async function main() {
           } catch (error) {
             console.error(`${colors.red}Error in market checks loop:${colors.reset}`, error.message);
           }
-          console.log(`\n${colors.purple}Waiting 5 seconds before next market check...${colors.reset}`);
+          console.log(`\n${colors.purple}Waiting 30 seconds before next market check...${colors.reset}`);
           await new Promise(resolve => setTimeout(resolve, CYCLE_DELAY));
         }
         break;
@@ -596,14 +882,6 @@ async function main() {
     console.error(`${colors.red}Fatal error:${colors.reset}`, error.message);
     process.exit(1);
   }
-}
-
-// Helper function to check if error is RPC-related
-function isRpcError(error) {
-  return error.message?.includes('Unexpected end of JSON input') || 
-         error.message?.includes('HTTP request failed') ||
-         error.message?.includes('Another transaction has higher priority') ||
-         error.details?.includes('Another transaction has higher priority');
 }
 
 // Run the script
