@@ -79,7 +79,7 @@ export default function TradingInterface() {
           }}
         >
           {/* Monad Chain Banner */}
-          {/* {isMonadChain && (
+          {isMonadChain && (
             <Grid item xs={12} sx={{ px: '0 !important', mx: '0 !important' }}>
               <Alert 
                 severity="info" 
@@ -109,16 +109,14 @@ export default function TradingInterface() {
                   <br />
                   - Funding engine functions every six hours instead of the fifteen minutes default on other deployments.
                   <br />
-                  - We are not able to simulate as many positions as we would like. Since leverage becomes cheaper as liquidity grows, leverage fees will be more expensive than in other networks.
-                  <br />
                   If you would like to support the project you can do so by donating $MON to 0x9b7e5d40fCb79bbF4171521F5a8e2e15808f82D7 so we can improve performance.
                   Thank you for understanding and enjoy the Monad Testnet!
                 </Typography>
               </Alert>
             </Grid>
-          )} */}
+          )}
 
-          {/* Row 1 - PriceFeeds */}
+          {/* Row 1 - PriceFeeds
           <Grid item xs={12} sx={{
             px: '0 !important',
             mx: '0 !important',
