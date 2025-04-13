@@ -160,7 +160,7 @@ if (!usdAddress) {
 
 // Define standard delays
 const TRANSACTION_DELAY = 1000;  // 1 second between transactions
-const CYCLE_DELAY = 30000;        // 30 seconds between cycles
+const CYCLE_DELAY = 30000;        // 30 seconds between `cycles
 const ERROR_DELAY = 10000;       // 10 seconds after errors
 
 // Base gas price for Monad

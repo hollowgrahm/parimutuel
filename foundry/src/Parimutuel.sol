@@ -17,36 +17,36 @@ import {IERC20} from "./interfaces/IERC20.sol";
 contract Parimutuel {
     using Array for address[];
 
-    address private admin;
-    address private feeCollector;
-    PriceFeed private oracle;
-    IERC20 private usd;
+    address public admin;
+    address public feeCollector;
+    PriceFeed public oracle;
+    IERC20 public usd;
 
-    mapping(address => Position) private shorts;
-    mapping(address => Liquidity) private shortLPs;
+    mapping(address => Position) public shorts;
+    mapping(address => Liquidity) public shortLPs;
     uint256 public shortTokens;
-    uint256 private shortShares;
-    uint256 private shortActiveShares;
-    uint256 private shortFunds;
-    uint256 private shortProfits;
+    uint256 public shortShares;
+    uint256 public shortActiveShares;
+    uint256 public shortFunds;
+    uint256 public shortProfits;
 
-    mapping(address => Position) private longs;
-    mapping(address => Liquidity) private longLPs;
+    mapping(address => Position) public longs;
+    mapping(address => Liquidity) public longLPs;
     uint256 public longTokens;
-    uint256 private longShares;
-    uint256 private longActiveShares;
-    uint256 private longFunds;
-    uint256 private longProfits;
+    uint256 public longShares;
+    uint256 public longActiveShares;
+    uint256 public longFunds;
+    uint256 public longProfits;
 
-    address[] private shortUsers;
-    address[] private longUsers;
+    address[] public shortUsers;
+    address[] public longUsers;
 
-    uint256 private constant PRECISION = 10 ** 8;
-    uint256 private constant MIN_LEVERAGE = 2 * PRECISION;
-    uint256 private constant MAX_LEVERAGE = 100 * PRECISION;
-    uint256 private constant FUNDING_INTERVAL = 21600;
-    uint256 private constant FUNDING_PERIODS = 4;
-    uint256 private constant FAUCET_AMOUNT = 10_000 * PRECISION;
+    uint256 public PRECISION = 10 ** 8;
+    uint256 public MIN_LEVERAGE = 2 * PRECISION;
+    uint256 public MAX_LEVERAGE = 100 * PRECISION;
+    uint256 public FUNDING_INTERVAL = 900;
+    uint256 public FUNDING_PERIODS = 96;
+    uint256 public FAUCET_AMOUNT = 10_000 * PRECISION;
 
     struct Position {
         address owner;
@@ -394,14 +394,14 @@ contract Parimutuel {
     function shortLiqCalc(
         uint256 entry,
         uint256 leverage
-    ) internal pure returns (uint256 liquidation) {
+    ) internal view returns (uint256 liquidation) {
         return entry + ((entry * PRECISION) / leverage);
     }
 
     function shortProfitCalc(
         uint256 entry,
         uint256 leverage
-    ) internal pure returns (uint256 profit) {
+    ) internal view returns (uint256 profit) {
         return entry - ((entry * PRECISION) / leverage);
     }
 
@@ -691,14 +691,14 @@ contract Parimutuel {
     function longLiqCalc(
         uint256 entry,
         uint256 leverage
-    ) internal pure returns (uint256 liquidation) {
+    ) internal view returns (uint256 liquidation) {
         return entry - ((entry * PRECISION) / leverage);
     }
 
     function longProfitCalc(
         uint256 entry,
         uint256 leverage
-    ) internal pure returns (uint256 profit) {
+    ) internal view returns (uint256 profit) {
         return entry + ((entry * PRECISION) / leverage);
     }
 
@@ -731,7 +731,7 @@ contract Parimutuel {
     function leverageCalc(
         uint256 tokens,
         uint256 margin
-    ) internal pure returns (uint256 leverage) {
+    ) internal view returns (uint256 leverage) {
         return (tokens * PRECISION) / margin;
     }
 
@@ -762,6 +762,14 @@ contract Parimutuel {
     /// ============================================================================================
     /// Funding Rate Engine
     /// ============================================================================================
+
+    function setFundingInterval(uint256 fundingInterval) external {
+        FUNDING_INTERVAL = fundingInterval;
+    }
+
+    function setFundingPeriods(uint256 fundingPeriods) external {
+        FUNDING_PERIODS = fundingPeriods;
+    }
 
     function shortFundings() external view returns (address[] memory) {
         uint256 count = 0;
